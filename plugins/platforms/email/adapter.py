@@ -140,8 +140,27 @@ def _open_smtp(host: str, port: int, security: str, ctx: ssl.SSLContext, smtp_cl
 
 
 def _send_imap_id(imap: "imaplib.IMAP4") -> None:
-    """Send RFC 2971 IMAP ID: 163/NetEase require it after LOGIN (else every UID command
-    returns ``BYE Unsafe Login``); other servers may reject it, so failures are swallowed."""
+    """Send RFC 2971 IMAP ID command identifying this client.
+
+    Required by 163/NetEase mailbox after LOGIN: without it, every UID
+    SEARCH/FETCH returns ``BYE Unsafe Login`` and disconnects.
+
+    Only sent when the server advertises the ``ID`` capability (RFC 2971
+    requires advertising it). Servers that lack the extension can react
+    badly to the unknown command — Purelymail answers with an untagged
+    ``* BYE Unknown command.`` and closes the connection, which imaplib
+    cannot surface here; the failure appears one command later as a
+    misleading SELECT error. ``imap.capabilities`` is populated by
+    imaplib at connect time (uppercase tuple), so the check is free.
+    Failures from servers that advertise ``ID`` but reject it are still
+    swallowed below.
+    """
+    caps = getattr(imap, "capabilities", ()) or ()
+    if "ID" not in caps:
+        logger.debug(
+            "[Email] Server does not advertise IMAP ID capability; skipping ID"
+        )
+        return
     try:
         try:
             from hermes_cli import __version__ as _hermes_version
